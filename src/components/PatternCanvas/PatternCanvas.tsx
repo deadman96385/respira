@@ -6,7 +6,8 @@ import {
 } from "../../stores/useMachineStore";
 import { useMachineUploadStore } from "../../stores/useMachineUploadStore";
 import { usePatternStore } from "../../stores/usePatternStore";
-import { Stage, Layer } from "react-konva";
+import { useDigitizeStore } from "../../stores/useDigitizeStore";
+import { Stage, Layer, Line, Circle } from "react-konva";
 import Konva from "konva";
 import { PhotoIcon, SunIcon, MoonIcon } from "@heroicons/react/24/solid";
 import { Grid, Origin, Hoop } from "./KonvaComponents";
@@ -112,6 +113,10 @@ export function PatternCanvas() {
     isUploading,
   });
 
+  const digitizeActive = useDigitizeStore((s) => s.active);
+  const digitizePoints = useDigitizeStore((s) => s.points);
+  const addDigitizePoint = useDigitizeStore((s) => s.addPoint);
+
   const [previewDark, setPreviewDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -195,8 +200,18 @@ export function PatternCanvas() {
               y={stagePos.y}
               scaleX={stageScale}
               scaleY={stageScale}
-              draggable
+              draggable={!digitizeActive}
               onWheel={handleWheel}
+              onClick={(e) => {
+                if (!digitizeActive) return;
+                const stage = e.target.getStage();
+                if (!stage) return;
+                const pos = stage.getPointerPosition();
+                if (!pos) return;
+                const x = (pos.x - stage.x()) / stage.scaleX();
+                const y = (pos.y - stage.y()) / stage.scaleY();
+                addDigitizePoint([x / 10, y / 10]);
+              }}
               onDragStart={handleStageDragStart}
               onDragEnd={handleStageDragEnd}
               ref={(node) => {
@@ -255,6 +270,29 @@ export function PatternCanvas() {
                     showProgress={true}
                     currentStitchIndex={sewingProgress?.currentStitch || 0}
                   />
+                )}
+              </Layer>
+              {/* Digitize overlay layer */}
+              <Layer listening={false} visible={digitizeActive}>
+                {digitizePoints.length > 0 && (
+                  <>
+                    <Line
+                      points={digitizePoints.flatMap((p) => [p[0] * 10, p[1] * 10])}
+                      stroke="#ff0000"
+                      strokeWidth={2}
+                      lineCap="round"
+                      lineJoin="round"
+                    />
+                    {digitizePoints.map((p, i) => (
+                      <Circle
+                        key={i}
+                        x={p[0] * 10}
+                        y={p[1] * 10}
+                        radius={4}
+                        fill="#ff0000"
+                      />
+                    ))}
+                  </>
                 )}
               </Layer>
             </Stage>

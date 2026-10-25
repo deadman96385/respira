@@ -1,20 +1,66 @@
 import { useRef, useState } from "react";
 import { usePatternStore } from "../stores/usePatternStore";
+import { useDigitizeStore } from "../stores/useDigitizeStore";
 import { designToPattern } from "../lib/digitize/designToPattern";
 import { autoPunchDesign } from "../lib/digitize/autoPunch";
-import type { DigitizedDesign, ShapeLayer, StitchType } from "../lib/digitize/types";
+import type { DigitizedDesign, ShapeLayer } from "../lib/digitize/types";
 
-const STITCH_TYPES: StitchType[] = ["running", "satin", "tatami"];
+const STITCH_TYPES: ShapeLayer["stitchType"][] = ["running", "satin", "tatami"];
 
 export function DigitizePanel() {
   const setPattern = usePatternStore((s) => s.setPattern);
-  const [stitchType, setStitchType] = useState<StitchType>("running");
-  const [points, setPoints] = useState<[number, number][]>([]);
+  const stitchType = useDigitizeStore((s) => s.stitchType);
+  const setStitchType = useDigitizeStore((s) => s.setStitchType);
+  const points = useDigitizeStore((s) => s.points);
+  const hex = useDigitizeStore((s) => s.hex);
+  const setHex = useDigitizeStore((s) => s.setHex);
+  const removeLast = useDigitizeStore((s) => s.removeLast);
+  const clear = useDigitizeStore((s) => s.clear);
+
   const [x, setX] = useState("");
   const [y, setY] = useState("");
-  const [hex, setHex] = useState("#FF0000");
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const addPoint = () => {
+    const nx = parseFloat(x);
+    const ny = parseFloat(y);
+    if (Number.isNaN(nx) || Number.isNaN(ny)) {
+      setError("Enter numeric x,y");
+      return;
+    }
+    useDigitizeStore.getState().addPoint([nx, ny]);
+    setX("");
+    setY("");
+    setError(null);
+  };
+
+  const generate = () => {
+    if (points.length < 2) {
+      setError("Need at least 2 points");
+      return;
+    }
+    const layer: ShapeLayer = {
+      id: `layer-${Date.now()}`,
+      points,
+      stitchType,
+      params:
+        stitchType === "running"
+          ? { stitchLen: 2.5 }
+          : stitchType === "satin"
+            ? { width: 2.0, stitchLen: 0.4 }
+            : { angleDeg: 0, rowSpacing: 0.4, stitchLen: 3.0 },
+      thread: { hex, colorCode: "001", chartCode: 13 },
+      closed: false,
+    };
+    const design: DigitizedDesign = {
+      layers: [layer],
+      hoopMm: [100, 100],
+    };
+    const data = designToPattern(design);
+    setPattern(data, "digitized.pesx");
+    setError(null);
+  };
 
   const handleAutoPunch = async (file: File) => {
     try {
@@ -47,49 +93,6 @@ export function DigitizePanel() {
     }
   };
 
-  const addPoint = () => {
-    const nx = parseFloat(x);
-    const ny = parseFloat(y);
-    if (Number.isNaN(nx) || Number.isNaN(ny)) {
-      setError("Enter numeric x,y");
-      return;
-    }
-    setPoints((p) => [...p, [nx, ny]]);
-    setX("");
-    setY("");
-    setError(null);
-  };
-
-  const removeLast = () => setPoints((p) => p.slice(0, -1));
-  const clear = () => setPoints([]);
-
-  const generate = () => {
-    if (points.length < 2) {
-      setError("Need at least 2 points");
-      return;
-    }
-    const layer: ShapeLayer = {
-      id: `layer-${Date.now()}`,
-      points,
-      stitchType,
-      params:
-        stitchType === "running"
-          ? { stitchLen: 2.5 }
-          : stitchType === "satin"
-            ? { width: 2.0, stitchLen: 0.4 }
-            : { angleDeg: 0, rowSpacing: 0.4, stitchLen: 3.0 },
-      thread: { hex, colorCode: "001", chartCode: 13 },
-      closed: false,
-    };
-    const design: DigitizedDesign = {
-      layers: [layer],
-      hoopMm: [100, 100],
-    };
-    const data = designToPattern(design);
-    setPattern(data, "digitized.pesx");
-    setError(null);
-  };
-
   return (
     <div className="flex flex-col gap-3 p-3 border rounded-md bg-card">
       <h2 className="font-semibold text-sm">Digitize</h2>
@@ -98,7 +101,7 @@ export function DigitizePanel() {
         <select
           className="ml-2 border rounded px-1"
           value={stitchType}
-          onChange={(e) => setStitchType(e.target.value as StitchType)}
+          onChange={(e) => setStitchType(e.target.value as ShapeLayer["stitchType"])}
         >
           {STITCH_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -129,20 +132,14 @@ export function DigitizePanel() {
           value={y}
           onChange={(e) => setY(e.target.value)}
         />
-        <button
-          className="text-xs px-2 py-1 border rounded"
-          onClick={addPoint}
-        >
+        <button className="text-xs px-2 py-1 border rounded" onClick={addPoint}>
           Add
         </button>
       </div>
       <div className="text-xs text-muted-foreground">
         Points: {points.length}
         {points.length > 0 && (
-          <button
-            className="ml-2 underline"
-            onClick={removeLast}
-          >
+          <button className="ml-2 underline" onClick={removeLast}>
             undo
           </button>
         )}

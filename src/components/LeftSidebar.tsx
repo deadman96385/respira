@@ -1,7 +1,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useMachineStore, usePatternUploaded } from "../stores/useMachineStore";
 import { usePatternStore } from "../stores/usePatternStore";
-import { useState } from "react";
+import { useDigitizeStore } from "../stores/useDigitizeStore";
 import { ConnectionPrompt } from "./ConnectionPrompt";
 import { FileUpload } from "./FileUpload";
 import { DigitizePanel } from "./DigitizePanel";
@@ -22,7 +22,8 @@ export function LeftSidebar() {
     })),
   );
 
-  const [digitizeMode, setDigitizeMode] = useState(false);
+  const digitizeMode = useDigitizeStore((s) => s.active);
+  const setDigitizeMode = useDigitizeStore((s) => s.setActive);
 
   // Derived state: pattern is uploaded if machine has pattern info
   const patternUploaded = usePatternUploaded();
