@@ -162,6 +162,65 @@ export function DigitizePanel() {
         <button
           className="text-xs px-2 py-1 border rounded"
           onClick={() => {
+            const payload = JSON.stringify({
+              points,
+              stitchType,
+              hex,
+            });
+            localStorage.setItem("digitize-design", payload);
+            const blob = new Blob([payload], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "digitized-design.json";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Save design
+        </button>
+        <button
+          className="text-xs px-2 py-1 border rounded"
+          onClick={() => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "application/json";
+            input.onchange = async () => {
+              const f = input.files?.[0];
+              if (!f) return;
+              try {
+                const text = await f.text();
+                const parsed = JSON.parse(text) as {
+                  points?: [number, number][];
+                  stitchType?: ShapeLayer["stitchType"];
+                  hex?: string;
+                };
+                if (parsed.points) useDigitizeStore.getState().clear();
+                if (parsed.points) {
+                  for (const p of parsed.points) {
+                    useDigitizeStore.getState().addPoint(p);
+                  }
+                }
+                if (parsed.stitchType) {
+                  useDigitizeStore.getState().setStitchType(parsed.stitchType);
+                }
+                if (parsed.hex) useDigitizeStore.getState().setHex(parsed.hex);
+                setError(null);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "load failed");
+              }
+            };
+            input.click();
+          }}
+        >
+          Load design
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          className="text-xs px-2 py-1 border rounded"
+          onClick={() => {
             if (points.length < 2) {
               setError("Need at least 2 points");
               return;
