@@ -116,6 +116,8 @@ export function PatternCanvas() {
   const digitizeActive = useDigitizeStore((s) => s.active);
   const digitizePoints = useDigitizeStore((s) => s.points);
   const addDigitizePoint = useDigitizeStore((s) => s.addPoint);
+  const updateDigitizePoint = useDigitizeStore((s) => s.updatePoint);
+  const deleteDigitizePoint = useDigitizeStore((s) => s.deletePoint);
 
   const [previewDark, setPreviewDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -273,7 +275,7 @@ export function PatternCanvas() {
                 )}
               </Layer>
               {/* Digitize overlay layer */}
-              <Layer listening={false} visible={digitizeActive}>
+              <Layer listening={digitizeActive} visible={digitizeActive}>
                 {digitizePoints.length > 0 && (
                   <>
                     <Line
@@ -282,14 +284,28 @@ export function PatternCanvas() {
                       strokeWidth={2}
                       lineCap="round"
                       lineJoin="round"
+                      listening={false}
                     />
                     {digitizePoints.map((p, i) => (
                       <Circle
                         key={i}
                         x={p[0] * 10}
                         y={p[1] * 10}
-                        radius={4}
+                        radius={6}
                         fill="#ff0000"
+                        draggable
+                        onDragEnd={(e) => {
+                          const node = e.target;
+                          updateDigitizePoint(i, [
+                            node.x() / 10,
+                            node.y() / 10,
+                          ]);
+                        }}
+                        onContextMenu={(e) => {
+                          e.evt.preventDefault();
+                          deleteDigitizePoint(i);
+                        }}
+                        onDblClick={() => deleteDigitizePoint(i)}
                       />
                     ))}
                   </>
