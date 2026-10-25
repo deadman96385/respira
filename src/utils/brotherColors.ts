@@ -312,3 +312,26 @@ export function enhanceThreadWithBrotherColor(
     rgb: { r, g, b },
   };
 }
+
+/**
+ * Find the nearest Brother color to the given RGB values using squared
+ * Euclidean distance. Ported from ts/brotherColors.ts (nearestColor).
+ */
+export function findNearestBrotherColor(
+  r: number,
+  g: number,
+  b: number,
+): BrotherColor {
+  let best = brotherColors[0];
+  let bestD = Infinity;
+  for (const c of brotherColors) {
+    const dd = (c.R - r) ** 2 + (c.G - g) ** 2 + (c.B - b) ** 2;
+    if (dd < bestD) {
+      bestD = dd;
+      best = c;
+    }
+  }
+  return best;
+}
+
+export const nearestBrotherColor = findNearestBrotherColor;
