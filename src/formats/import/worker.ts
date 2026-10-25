@@ -1,6 +1,11 @@
 import { loadPyodide, type PyodideInterface } from "pyodide";
 import { STITCH, MOVE, TRIM, END } from "./constants";
 import { encodeStitchesToPen } from "../pen/encoder";
+import { encodeStitchesToPenVerified } from "../../lib/pen/penVerifiedAdapter";
+
+// Opt-in: use the verified pure-TS pen encoder instead of the legacy one.
+// Defaults to false to preserve existing machine output; flip to true to A/B test.
+const USE_VERIFIED_PEN_ENCODER = false;
 
 // Message types from main thread
 export type WorkerMessage =
@@ -320,7 +325,9 @@ for i, stitch in enumerate(pattern.stitches):
     // Encode stitches to PEN format using the extracted encoder
     console.log("[patternConverter] Encoding stitches to PEN format...");
     console.log("  - Input stitches:", stitches);
-    const { penBytes: penStitches, bounds } = encodeStitchesToPen(stitches);
+    const { penBytes: penStitches, bounds } = USE_VERIFIED_PEN_ENCODER
+      ? encodeStitchesToPenVerified(stitches)
+      : encodeStitchesToPen(stitches);
     const { minX, maxX, minY, maxY } = bounds;
 
     // Calculate unique colors from threads (threads represent color blocks, not unique colors)
