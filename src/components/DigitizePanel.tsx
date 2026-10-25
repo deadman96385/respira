@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { usePatternStore } from "../stores/usePatternStore";
 import { useDigitizeStore } from "../stores/useDigitizeStore";
 import { designToPattern } from "../lib/digitize/designToPattern";
+import { designToPesx } from "../lib/digitize/designToPesx";
 import { autoPunchDesign } from "../lib/digitize/autoPunch";
 import type { DigitizedDesign, ShapeLayer } from "../lib/digitize/types";
 
@@ -156,6 +157,71 @@ export function DigitizePanel() {
       >
         Generate pattern
       </button>
+
+      <div className="flex gap-2">
+        <button
+          className="text-xs px-2 py-1 border rounded"
+          onClick={() => {
+            if (points.length < 2) {
+              setError("Need at least 2 points");
+              return;
+            }
+            const layer: ShapeLayer = {
+              id: `layer-${Date.now()}`,
+              points,
+              stitchType,
+              params: {},
+              thread: { hex, colorCode: "001", chartCode: 13 },
+              closed: false,
+            };
+            const design: DigitizedDesign = {
+              layers: [layer],
+              hoopMm: [100, 100],
+            };
+            const pesx = designToPesx(design);
+            const blob = new Blob([pesx], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "digitized.pesx";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export pesx
+        </button>
+        <button
+          className="text-xs px-2 py-1 border rounded"
+          onClick={() => {
+            if (points.length < 2) {
+              setError("Need at least 2 points");
+              return;
+            }
+            const layer: ShapeLayer = {
+              id: `layer-${Date.now()}`,
+              points,
+              stitchType,
+              params: {},
+              thread: { hex, colorCode: "001", chartCode: 13 },
+              closed: false,
+            };
+            const design: DigitizedDesign = {
+              layers: [layer],
+              hoopMm: [100, 100],
+            };
+            const data = designToPattern(design);
+            const blob = new Blob([data.penData as unknown as BlobPart], { type: "application/octet-stream" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "digitized.pen.bin";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export pen
+        </button>
+      </div>
 
       <div className="border-t pt-2 mt-2">
         <p className="text-xs font-semibold mb-1">Auto-punch</p>
