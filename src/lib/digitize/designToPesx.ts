@@ -4,7 +4,7 @@ import { expandSatin } from "../stitchgen/satin";
 import { expandTatami } from "../stitchgen/tatami";
 import { writePesx, type PesxPath } from "../pen/pen";
 
-function expandLayer(layer: ShapeLayer): [number, number][] {
+export function expandLayer(layer: ShapeLayer): [number, number][] {
   const p = layer.params;
   switch (layer.stitchType) {
     case "running":
