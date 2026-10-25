@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePatternStore } from "../stores/usePatternStore";
 import { designToPattern } from "../lib/digitize/designToPattern";
+import { autoPunchDesign } from "../lib/digitize/autoPunch";
 import type { DigitizedDesign, ShapeLayer, StitchType } from "../lib/digitize/types";
 
 const STITCH_TYPES: StitchType[] = ["running", "satin", "tatami"];
@@ -13,6 +14,38 @@ export function DigitizePanel() {
   const [y, setY] = useState("");
   const [hex, setHex] = useState("#FF0000");
   const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleAutoPunch = async (file: File) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = url;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("image load failed"));
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas context");
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      URL.revokeObjectURL(url);
+      const design = autoPunchDesign(imageData, {
+        threshold: 128,
+        simplifyEpsilon: 2,
+        stitchType: "tatami",
+        hoopMm: [100, 100],
+      });
+      const data = designToPattern(design);
+      setPattern(data, "autopunched.pesx");
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "auto-punch failed");
+    }
+  };
 
   const addPoint = () => {
     const nx = parseFloat(x);
@@ -126,6 +159,20 @@ export function DigitizePanel() {
       >
         Generate pattern
       </button>
+
+      <div className="border-t pt-2 mt-2">
+        <p className="text-xs font-semibold mb-1">Auto-punch</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="text-xs"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleAutoPunch(f);
+          }}
+        />
+      </div>
     </div>
   );
 }
