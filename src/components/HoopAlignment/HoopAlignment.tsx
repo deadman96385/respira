@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useHoopImageStore } from "../../stores/useHoopImageStore";
+import type { HoopSize } from "../../constants/hoopGeometry";
 import { HoopMarkerPicker } from "./HoopMarkerPicker";
+
+const HOOP_OPTIONS: { size: HoopSize; label: string }[] = [
+  { size: "100", label: "100 mm" },
+  { size: "70", label: "70 mm" },
+];
 
 /**
  * Sidebar control for the hoop-photo alignment feature: load a photo of the
@@ -16,11 +22,13 @@ import { HoopMarkerPicker } from "./HoopMarkerPicker";
 export function HoopAlignment() {
   const {
     status,
+    hoopSize,
     opacity,
     visible,
     showMarkerCheck,
     alignError,
     loadImage,
+    setHoopSize,
     setOpacity,
     setVisible,
     setShowMarkerCheck,
@@ -29,11 +37,13 @@ export function HoopAlignment() {
   } = useHoopImageStore(
     useShallow((s) => ({
       status: s.status,
+      hoopSize: s.hoopSize,
       opacity: s.opacity,
       visible: s.visible,
       showMarkerCheck: s.showMarkerCheck,
       alignError: s.alignError,
       loadImage: s.loadImage,
+      setHoopSize: s.setHoopSize,
       setOpacity: s.setOpacity,
       setVisible: s.setVisible,
       setShowMarkerCheck: s.setShowMarkerCheck,
@@ -86,6 +96,28 @@ export function HoopAlignment() {
                   ? "Loaded — align to the markers"
                   : "Overlay a photo of the hooped fabric"}
             </p>
+          </div>
+        </div>
+
+        <div
+          className="flex items-center justify-between gap-3 mb-3"
+          role="radiogroup"
+          aria-label="Hoop size"
+        >
+          <span className="text-xs text-gray-600 dark:text-gray-400">Hoop</span>
+          <div className="flex gap-1">
+            {HOOP_OPTIONS.map(({ size, label }) => (
+              <Button
+                key={size}
+                size="sm"
+                variant={hoopSize === size ? "default" : "outline"}
+                role="radio"
+                aria-checked={hoopSize === size}
+                onClick={() => setHoopSize(size)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
         </div>
 

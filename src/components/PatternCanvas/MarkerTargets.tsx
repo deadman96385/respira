@@ -1,7 +1,7 @@
 import { Group, Rect, Line } from "react-konva";
 import { useShallow } from "zustand/react/shallow";
 import { useHoopImageStore } from "../../stores/useHoopImageStore";
-import { MARKERS, MARKER_SIZE } from "../../constants/hoopGeometry";
+import { MARKER_SIZE, markersForSize } from "../../constants/hoopGeometry";
 
 /**
  * Marker-check overlay (toggled from the Hoop Photo card): draws the four
@@ -11,10 +11,11 @@ import { MARKERS, MARKER_SIZE } from "../../constants/hoopGeometry";
  * confirmation that the registration is correct.
  */
 export function MarkerTargets() {
-  const { status, showMarkerCheck } = useHoopImageStore(
+  const { status, showMarkerCheck, hoopSize } = useHoopImageStore(
     useShallow((s) => ({
       status: s.status,
       showMarkerCheck: s.showMarkerCheck,
+      hoopSize: s.hoopSize,
     })),
   );
 
@@ -25,7 +26,7 @@ export function MarkerTargets() {
 
   return (
     <Group name="marker-targets" listening={false}>
-      {MARKERS.map((m) => (
+      {markersForSize(hoopSize).map((m) => (
         <Group key={m.side}>
           <Rect
             x={m.center.x - half}

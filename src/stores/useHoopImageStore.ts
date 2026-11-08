@@ -3,8 +3,9 @@ import { computeHomography, type Mat3, type Pt } from "../utils/homography";
 import { warpImageToHoop } from "../utils/imageWarp";
 import { detectMarkers, type MarkerCandidate } from "../utils/markerDetection";
 import {
-  MARKER_CENTERS,
   classifyMarkerSide,
+  markerCentersForSize,
+  type HoopSize,
   type MarkerSide,
 } from "../constants/hoopGeometry";
 
@@ -31,6 +32,7 @@ interface HoopImageState {
   homography: Mat3 | null;
   warped: HTMLCanvasElement | null;
 
+  hoopSize: HoopSize; // which hoop is in the photo
   opacity: number; // 0..1
   visible: boolean;
   showMarkerCheck: boolean; // draw the assumed marker squares for verification
@@ -42,6 +44,7 @@ interface HoopImageState {
   autoDetect: () => void;
   undoClick: () => void;
   resetClicks: () => void;
+  setHoopSize: (size: HoopSize) => void;
   setOpacity: (v: number) => void;
   setVisible: (v: boolean) => void;
   setShowMarkerCheck: (v: boolean) => void;
@@ -63,6 +66,7 @@ const DEFAULTS = {
 
 export const useHoopImageStore = create<HoopImageState>((set, get) => ({
   ...DEFAULTS,
+  hoopSize: "100",
   opacity: 0.6,
   visible: true,
   showMarkerCheck: false,
@@ -94,7 +98,7 @@ export const useHoopImageStore = create<HoopImageState>((set, get) => ({
   },
 
   addClick: (pt: Pt) => {
-    const { rawClicks, status, image } = get();
+    const { rawClicks, status, image, hoopSize } = get();
     if (status === "none") return;
     if (rawClicks.length >= 4) return;
 
@@ -105,7 +109,7 @@ export const useHoopImageStore = create<HoopImageState>((set, get) => ({
     }
 
     // Fourth click — classify, solve the homography and warp.
-    const result = solveAlignment(next, image);
+    const result = solveAlignment(next, image, hoopSize);
     if (!result.ok) {
       set({ rawClicks: next, alignError: result.error });
       return;
@@ -121,7 +125,7 @@ export const useHoopImageStore = create<HoopImageState>((set, get) => ({
   },
 
   autoDetect: () => {
-    const { image } = get();
+    const { image, hoopSize } = get();
     if (!image) return;
 
     let result;
@@ -145,7 +149,7 @@ export const useHoopImageStore = create<HoopImageState>((set, get) => ({
       return;
     }
 
-    const solved = solveAlignment(result.markers, image);
+    const solved = solveAlignment(result.markers, image, hoopSize);
     if (!solved.ok) {
       set({
         detectionCandidates: result.candidates,
@@ -182,6 +186,24 @@ export const useHoopImageStore = create<HoopImageState>((set, get) => ({
       alignError: null,
     }),
 
+  setHoopSize: (size: HoopSize) => {
+    const { rawClicks, image, status } = get();
+    set({ hoopSize: size });
+    // Re-register an existing alignment against the new hoop's markers.
+    if (status !== "aligned" || !image || rawClicks.length !== 4) return;
+    const result = solveAlignment(rawClicks, image, size);
+    if (!result.ok) {
+      set({ alignError: result.error });
+      return;
+    }
+    set({
+      markerPoints: result.markerPoints,
+      homography: result.homography,
+      warped: result.warped,
+      alignError: null,
+    });
+  },
+
   setOpacity: (v: number) => set({ opacity: Math.max(0, Math.min(1, v)) }),
   setVisible: (v: boolean) => set({ visible: v }),
   setShowMarkerCheck: (v: boolean) => set({ showMarkerCheck: v }),
@@ -206,7 +228,11 @@ type AlignResult =
  * Classify the four raw clicks into frame sides, solve the homography, and warp
  * the photo. Pure with respect to the store (returns a result to apply).
  */
-function solveAlignment(clicks: Pt[], image: HTMLImageElement): AlignResult {
+function solveAlignment(
+  clicks: Pt[],
+  image: HTMLImageElement,
+  hoopSize: HoopSize,
+): AlignResult {
   // Classify each click by its dominant direction from the centroid.
   const cx = clicks.reduce((s, p) => s + p.x, 0) / 4;
   const cy = clicks.reduce((s, p) => s + p.y, 0) / 4;
@@ -226,7 +252,8 @@ function solveAlignment(clicks: Pt[], image: HTMLImageElement): AlignResult {
 
   const sides: MarkerSide[] = ["top", "right", "bottom", "left"];
   const src: Pt[] = sides.map((s) => bySide[s]!);
-  const dst: Pt[] = sides.map((s) => MARKER_CENTERS[s]);
+  const centers = markerCentersForSize(hoopSize);
+  const dst: Pt[] = sides.map((s) => centers[s]);
 
   try {
     const homography = computeHomography(src, dst);

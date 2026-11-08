@@ -55,18 +55,11 @@ function rotate90(p: Point): Point {
   return { x: -p.y, y: p.x };
 }
 
-/**
- * The top marker's center, derived from the physical measurements.
- *  - left edge  = -HOOP_INNER_HALF + inset      (24mm right of the left inner edge)
- *  - bottom edge = -HOOP_INNER_HALF - gap        (6mm above the top inner edge)
- * The marker square is axis-aligned, so its center is edge ± MARKER_SIZE/2.
+/*
+ * Marker centers come from the physical measurements: the top marker's left
+ * edge is MARKER_INSET_MM right of the left inner edge, and its bottom edge is
+ * MARKER_EDGE_GAP_MM above the top inner edge. The others follow by 90° turns.
  */
-const TOP_MARKER_LEFT = -HOOP_INNER_HALF + MARKER_INSET_MM * MM; // -407.5
-const TOP_MARKER_BOTTOM = -HOOP_INNER_HALF - MARKER_EDGE_GAP_MM * MM; // -707.5
-const TOP_MARKER_CENTER: Point = {
-  x: TOP_MARKER_LEFT + MARKER_SIZE / 2, // -347.5
-  y: TOP_MARKER_BOTTOM - MARKER_SIZE / 2, // -767.5
-};
 
 /** Corners of an axis-aligned square marker of size MARKER_SIZE about `center`. */
 function markerCorners(center: Point): [Point, Point, Point, Point] {
@@ -81,6 +74,36 @@ function markerCorners(center: Point): [Point, Point, Point, Point] {
 
 const SIDES: MarkerSide[] = ["top", "right", "bottom", "left"];
 
+// ---- Hoop sizes ----
+
+/** The PP-1 hoops that hoop-photo alignment supports. */
+export type HoopSize = "100" | "70";
+
+/**
+ * Inner opening (mm) of each hoop. The 70mm value assumes the small hoop uses
+ * the same marker inset and gap as the standard hoop; turn on "Marker check"
+ * after aligning to confirm the squares land on the real markers.
+ */
+export const HOOP_INNER_MM_BY_SIZE: Record<HoopSize, number> = {
+  "100": HOOP_INNER_MM,
+  "70": 70,
+};
+
+/** The four markers for a hoop with the given inner opening (mm). */
+function markersForHoop(hoopInnerMm: number): MarkerGeometry[] {
+  const half = (hoopInnerMm * MM) / 2;
+  let center: Point = {
+    x: -half + MARKER_INSET_MM * MM + MARKER_SIZE / 2,
+    y: -half - MARKER_EDGE_GAP_MM * MM - MARKER_SIZE / 2,
+  };
+  const out: MarkerGeometry[] = [];
+  for (const side of SIDES) {
+    out.push({ side, center, corners: markerCorners(center) });
+    center = rotate90(center);
+  }
+  return out;
+}
+
 /**
  * All four markers, in order [top, right, bottom, left], generated from the top
  * marker by successive 90° clockwise rotations about the hoop center.
@@ -91,20 +114,7 @@ const SIDES: MarkerSide[] = ["top", "right", "bottom", "left"];
  *   bottom ( 347.5,  767.5)
  *   left   (-767.5,  347.5)
  */
-export const MARKERS: MarkerGeometry[] = (() => {
-  const out: MarkerGeometry[] = [];
-  let center = TOP_MARKER_CENTER;
-  for (let i = 0; i < 4; i++) {
-    out.push({ side: SIDES[i], center, corners: markerCorners(center) });
-    center = rotate90(center);
-  }
-  return out;
-})();
-
-/** Marker centers in canonical [top, right, bottom, left] order. */
-export const MARKER_CENTERS: Record<MarkerSide, Point> = Object.fromEntries(
-  MARKERS.map((m) => [m.side, m.center]),
-) as Record<MarkerSide, Point>;
+export const MARKERS: MarkerGeometry[] = markersForHoop(HOOP_INNER_MM);
 
 /** Flat list of all 16 marker corners, grouped by marker (for a 16-point fit). */
 export const MARKER_CORNERS: Point[] = MARKERS.flatMap((m) => m.corners);
@@ -133,4 +143,20 @@ export function classifyMarkerSide(dx: number, dy: number): MarkerSide {
     return dy < 0 ? "top" : "bottom";
   }
   return dx > 0 ? "right" : "left";
+}
+
+const MARKERS_70 = markersForHoop(HOOP_INNER_MM_BY_SIZE["70"]);
+
+/** Marker geometry for the selected hoop. */
+export function markersForSize(size: HoopSize): MarkerGeometry[] {
+  return size === "70" ? MARKERS_70 : MARKERS;
+}
+
+/** Marker centers for the selected hoop, keyed by frame side. */
+export function markerCentersForSize(
+  size: HoopSize,
+): Record<MarkerSide, Point> {
+  return Object.fromEntries(
+    markersForSize(size).map((m) => [m.side, m.center]),
+  ) as Record<MarkerSide, Point>;
 }
