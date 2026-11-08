@@ -124,6 +124,35 @@ export function findBrotherColorByRGB(
 }
 
 /**
+ * Find the closest Brother color to a hex color (RGB Euclidean distance)
+ *
+ * Unlike the exact-match lookups above, this always returns a color, so it can
+ * suggest a Brother thread for any pattern color.
+ *
+ * @param hex - Color as "#RRGGBB"
+ * @returns The nearest Brother color, or undefined if the hex is invalid
+ */
+export function findNearestBrotherColor(hex: string): BrotherColor | undefined {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!match) return undefined;
+  const value = parseInt(match[1], 16);
+  const r = (value >> 16) & 0xff;
+  const g = (value >> 8) & 0xff;
+  const b = value & 0xff;
+
+  let best: BrotherColor | undefined;
+  let bestDistance = Infinity;
+  for (const c of brotherColors) {
+    const distance = (c.R - r) ** 2 + (c.G - g) ** 2 + (c.B - b) ** 2;
+    if (distance < bestDistance) {
+      best = c;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
  * Convert Brother color to ThreadColorInfo
  *
  * This replicates:

@@ -5,6 +5,8 @@
  * Shows color swatches with brand, catalog number, and description metadata
  */
 
+import { findNearestBrotherColor } from "../../utils/brotherColors";
+
 interface ThreadColor {
   hex: string;
   brand?: string | null;
@@ -32,6 +34,15 @@ export function ThreadLegend({ colors }: ThreadLegendProps) {
           .filter(Boolean)
           .join(" ");
 
+        // Nearest Brother thread, shown when it differs from the file's own code
+        const brother = findNearestBrotherColor(color.hex);
+        const brotherMeta =
+          brother &&
+          (!color.catalogNumber ||
+            color.catalogNumber.padStart(3, "0") !== brother.ColorCode)
+            ? `${brother.ColorName} (${brother.ColorCode})`
+            : null;
+
         // Secondary metadata: chart and description
         // Only show chart if it's different from catalogNumber
         const secondaryMetadata = [
@@ -39,6 +50,7 @@ export function ThreadLegend({ colors }: ThreadLegendProps) {
             ? color.chart
             : null,
           color.description,
+          brotherMeta,
         ]
           .filter(Boolean)
           .join(" ");
