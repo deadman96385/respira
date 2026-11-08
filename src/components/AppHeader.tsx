@@ -129,6 +129,11 @@ export function AppHeader() {
                             {machineInfo.serviceCount.toLocaleString()}
                           </p>
                         )}
+                        {machineInfo.softwareVersion && (
+                          <p className="text-xs">
+                            Firmware: {machineInfo.softwareVersion}
+                          </p>
+                        )}
                       </div>
                     </TooltipContent>
                   </Tooltip>
@@ -150,11 +155,32 @@ export function AppHeader() {
                 {isConnected ? (
                   <>
                     <Button
-                      onClick={disconnect}
+                      onClick={async () => {
+                        if (!confirm("Reset machine settings to defaults?"))
+                          return;
+                        try {
+                          await useMachineStore
+                            .getState()
+                            .service.resetSettings();
+                          alert("Settings reset.");
+                        } catch (err) {
+                          alert("Failed: " + (err as Error).message);
+                        }
+                      }}
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 bg-white/10 hover:bg-white/20 text-primary-100 border-white/20 flex-shrink-0"
+                      aria-label="Reset machine settings"
+                      title="Reset machine settings to defaults"
+                    >
+                      Reset
+                    </Button>
+                    <Button
                       size="sm"
                       variant="outline"
                       className="gap-1.5 bg-white/10 hover:bg-danger-600 text-primary-100 hover:text-white border-white/20 hover:border-danger-600 flex-shrink-0"
                       aria-label="Disconnect from machine"
+                      onClick={disconnect}
                     >
                       <XMarkIcon className="w-3 h-3" />
                       Disconnect
