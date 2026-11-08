@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import type { PesPatternData } from "../formats/import/pesImporter";
+import { calculatePatternTime } from "../utils/timeCalculation";
 import {
   Tooltip,
   TooltipContent,
@@ -16,6 +18,8 @@ export function PatternInfo({
   pesData,
   showThreadBlocks = false,
 }: PatternInfoProps) {
+  const estimates = useMemo(() => estimatePattern(pesData), [pesData]);
+
   return (
     <>
       <TooltipProvider>
@@ -99,6 +103,27 @@ export function PatternInfo({
         </div>
       </TooltipProvider>
 
+      {estimates && (
+        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+          <div className="bg-gray-200 dark:bg-gray-700/50 p-2 rounded">
+            <span className="text-gray-600 dark:text-gray-400 block">
+              Est. time
+            </span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">
+              ~{estimates.minutes} min
+            </span>
+          </div>
+          <div className="bg-gray-200 dark:bg-gray-700/50 p-2 rounded">
+            <span className="text-gray-600 dark:text-gray-400 block">
+              Thread
+            </span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">
+              ~{(estimates.threadMm / 1000).toFixed(1)} m
+            </span>
+          </div>
+        </div>
+      )}
+
       <Separator className="mb-3" />
 
       <div className="flex items-center gap-2 mb-2">
@@ -177,4 +202,32 @@ export function PatternInfo({
       </div>
     </>
   );
+}
+
+/**
+ * Sew time and top-thread estimates for the machine stitch stream.
+ * Time uses the same per-block formula as the Brother app (see timeCalculation).
+ */
+function estimatePattern(pesData: PesPatternData) {
+  const pen = pesData.penStitches;
+  if (!pen || pen.stitches.length === 0) return null;
+
+  const { totalMinutes } = calculatePatternTime(
+    pen.colorBlocks.map((b) => ({
+      stitchCount: b.endStitchIndex - b.startStitchIndex + 1,
+    })),
+    0,
+  );
+
+  // Thread used by sewn stitches (jumps are trimmed, so they don't count),
+  // plus 10% for take-up. Coordinates are in 0.1 mm.
+  let threadMm = 0;
+  for (let i = 1; i < pen.stitches.length; i++) {
+    const cur = pen.stitches[i];
+    if (cur.isFeed) continue;
+    const prev = pen.stitches[i - 1];
+    threadMm += Math.hypot(cur.x - prev.x, cur.y - prev.y) / 10;
+  }
+
+  return { minutes: totalMinutes, threadMm: threadMm * 1.1 };
 }
