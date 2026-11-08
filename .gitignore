@@ -15,6 +15,7 @@ release
 .electron-builder.cache
 out
 .vite
+work/
 *.local
 
 # Editor directories and files
