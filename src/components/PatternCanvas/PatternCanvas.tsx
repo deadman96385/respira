@@ -145,6 +145,55 @@ export function PatternCanvas() {
     [uploadedPesData, pesData],
   );
 
+  // Animated stitch-out preview
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const previewRafRef = useRef<number | null>(null);
+  const previewStartRef = useRef<number>(0);
+  const previewTotalRef = useRef<number>(0);
+
+  const previewStitches = useMemo(() => {
+    if (!displayPattern) return [];
+    return (
+      displayPattern.penStitches?.stitches ?? displayPattern.stitches ?? []
+    );
+  }, [displayPattern]);
+
+  const startPreview = useCallback(() => {
+    if (previewStitches.length === 0) return;
+    previewTotalRef.current = previewStitches.length;
+    previewStartRef.current = performance.now();
+    setPreviewIndex(0);
+    setIsPreviewPlaying(true);
+    const step = (now: number) => {
+      const elapsed = now - previewStartRef.current;
+      // 400 spm = 6.67 stitches/sec; scale 10x for preview
+      const idx = Math.min(
+        previewTotalRef.current,
+        Math.floor((elapsed / 1000) * 66.7),
+      );
+      setPreviewIndex(idx);
+      if (idx < previewTotalRef.current) {
+        previewRafRef.current = requestAnimationFrame(step);
+      } else {
+        setIsPreviewPlaying(false);
+      }
+    };
+    previewRafRef.current = requestAnimationFrame(step);
+  }, [previewStitches]);
+
+  const stopPreview = useCallback(() => {
+    if (previewRafRef.current) cancelAnimationFrame(previewRafRef.current);
+    previewRafRef.current = null;
+    setIsPreviewPlaying(false);
+    setPreviewIndex(0);
+  }, []);
+
+  // use previewIndex when playing, otherwise machine progress
+  const effectiveStitchIndex = isPreviewPlaying
+    ? previewIndex
+    : sewingProgress?.currentStitch || 0;
+
   // Memoize pattern dimensions calculation
   const patternDimensions = useMemo(() => {
     if (!displayPattern) return null;
@@ -260,7 +309,7 @@ export function PatternCanvas() {
                     rotation={localPatternRotation}
                     isInteractive={true}
                     showProgress={false}
-                    currentStitchIndex={0}
+                    currentStitchIndex={effectiveStitchIndex}
                     patternGroupRef={patternGroupRef}
                     transformerRef={transformerRef}
                     onDragEnd={handlePatternDragEnd}
@@ -280,7 +329,7 @@ export function PatternCanvas() {
                     offset={initialUploadedPatternOffset}
                     isInteractive={false}
                     showProgress={!restoredFromStorage}
-                    currentStitchIndex={sewingProgress?.currentStitch || 0}
+                    currentStitchIndex={effectiveStitchIndex}
                   />
                 )}
               </Layer>
@@ -330,6 +379,14 @@ export function PatternCanvas() {
                 onZoomOut={handleZoomOut}
                 onZoomReset={handleZoomReset}
               />
+              {displayPattern && previewStitches.length > 0 && (
+                <button
+                  onClick={isPreviewPlaying ? stopPreview : startPreview}
+                  className="absolute bottom-2 left-2 z-10 px-2 py-1 text-xs bg-white/90 dark:bg-gray-800/90 rounded shadow border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  {isPreviewPlaying ? "⏹ Stop" : "▶ Preview"}
+                </button>
+              )}
             </>
           )}
         </div>
