@@ -85,7 +85,7 @@ export const useMachineUploadStore = create<MachineUploadState>((set) => ({
       // uploaded data is used on resume (prevents inconsistencies from version updates)
       const pesDataToCache = originalPesData || uploadedPesData;
       const uuidStr = uuidToString(uuid);
-      storageService.savePattern(
+      await storageService.savePattern(
         uuidStr,
         pesDataToCache,
         fileName,

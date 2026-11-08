@@ -65,6 +65,13 @@ cached in this browser when its ID matches the PP1. Keep using the same browser
 and site address to retain that cache. Live machine status remains available if
 the cached pattern is missing; color-step details require the cached pattern.
 
+Artwork also saves automatically on this device, including a newly opened file,
+its position and rotation, and the exact uploaded preview. Refreshing or reopening
+the page restores it before Bluetooth connects. **Saved artwork** labels that
+preview until a matching PP1 pattern is recovered. Machine counters and live
+color-step tracking are recovered from the connection separately. Large artwork
+uses IndexedDB; clearing this site's browser data removes the saved workspace.
+
 ## Pattern Preparation
 
 Embroidery software seems to be a niche product and thus is quite expensive.

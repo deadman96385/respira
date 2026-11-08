@@ -50,6 +50,7 @@ export function PatternCanvas() {
     patternRotation: initialPatternRotation,
     uploadedPesData,
     uploadedPatternOffset: initialUploadedPatternOffset,
+    restoredFromStorage,
     setPatternOffset,
     setPatternRotation,
   } = usePatternStore(
@@ -59,6 +60,7 @@ export function PatternCanvas() {
       patternRotation: state.patternRotation,
       uploadedPesData: state.uploadedPesData,
       uploadedPatternOffset: state.uploadedPatternOffset,
+      restoredFromStorage: state.restoredFromStorage,
       setPatternOffset: state.setPatternOffset,
       setPatternRotation: state.setPatternRotation,
     })),
@@ -85,6 +87,10 @@ export function PatternCanvas() {
     pesData,
     uploadedPesData,
     machineInfo,
+    patternOffset: uploadedPesData
+      ? initialUploadedPatternOffset
+      : initialPatternOffset,
+    patternRotation: uploadedPesData ? 0 : initialPatternRotation,
   });
 
   // Handler for position preset selection
@@ -165,6 +171,7 @@ export function PatternCanvas() {
               {hasPattern ? (
                 <CardDescription className="text-xs">
                   {patternDimensions}
+                  {restoredFromStorage && " · Saved artwork"}
                 </CardDescription>
               ) : (
                 <CardDescription className="text-xs">
@@ -258,7 +265,7 @@ export function PatternCanvas() {
                     pesData={uploadedPesData}
                     offset={initialUploadedPatternOffset}
                     isInteractive={false}
-                    showProgress={true}
+                    showProgress={!restoredFromStorage}
                     currentStitchIndex={sewingProgress?.currentStitch || 0}
                   />
                 )}

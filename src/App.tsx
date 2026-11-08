@@ -27,6 +27,40 @@ function App() {
   // Initialize machine store subscriptions (once on mount)
   useEffect(() => {
     useMachineStore.getState().initialize();
+    // Restore the workspace immediately, including older uploaded-pattern caches.
+    void (async () => {
+      await usePatternStore.persist.rehydrate();
+      const hasArtwork = () => {
+        const state = usePatternStore.getState();
+        return state.pesData || state.uploadedPesData;
+      };
+      if (hasArtwork()) return;
+      const cached = await useMachineStore
+        .getState()
+        .storageService.getMostRecentPattern();
+      if (!cached || hasArtwork()) return;
+      const offset = cached.patternOffset ?? { x: 0, y: 0 };
+      const uploaded = cached.uploadedPesData ?? null;
+      const originalCenter = calculatePatternCenter(cached.pesData.bounds);
+      const uploadedCenter = calculatePatternCenter(
+        (uploaded ?? cached.pesData).bounds,
+      );
+      await usePatternStore.setState({
+        pesData: cached.pesData,
+        currentFileName: cached.fileName,
+        patternOffset: offset,
+        patternRotation: cached.patternRotation ?? 0,
+        uploadedPesData: uploaded,
+        uploadedPatternOffset: {
+          x: offset.x + uploadedCenter.x - originalCenter.x,
+          y: offset.y + uploadedCenter.y - originalCenter.y,
+        },
+        patternUploaded: !!uploaded,
+        restoredFromStorage: true,
+      });
+    })().catch((error) =>
+      console.warn("[Workspace] Could not restore previous artwork:", error),
+    );
   }, []);
 
   // Machine cache store - for auto-loading cached pattern
@@ -70,8 +104,11 @@ function App() {
 
   // Auto-load cached pattern when available
   useEffect(() => {
-    // Only auto-load if we have a resumed pattern and haven't already loaded it
-    if (resumedPattern && !uploadedPesData && !pesData) {
+    // A machine-verified cache match takes precedence over the saved workspace.
+    if (
+      resumedPattern &&
+      (pesData !== resumedPattern.pesData || !uploadedPesData)
+    ) {
       if (!resumedPattern.pesData) {
         console.error(
           "[App] ERROR: resumedPattern has no pesData!",
@@ -203,7 +240,7 @@ function App() {
       <AppHeader />
 
       <div className="flex-1 p-4 sm:p-5 lg:p-6 w-full overflow-y-auto lg:overflow-hidden flex flex-col">
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[480px_1fr] gap-4 md:gap-5 lg:gap-6 lg:overflow-hidden">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[480px_1fr] content-start lg:content-stretch gap-4 md:gap-5 lg:gap-6 lg:overflow-hidden">
           {/* Left Column - Controls */}
           <LeftSidebar />
 

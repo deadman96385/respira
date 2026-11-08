@@ -17,12 +17,15 @@ import type { PesPatternData } from "../../formats/import/pesImporter";
 import type { MachineInfo } from "../../types/machine";
 import { calculateInitialScale } from "../../utils/konvaRenderers";
 import { calculateZoomToPoint } from "../../components/PatternCanvas/patternCanvasHelpers";
+import { calculateRotatedBounds } from "../../utils/rotationUtils";
 
 interface UseCanvasViewportOptions {
   containerRef: RefObject<HTMLDivElement | null>;
   pesData: PesPatternData | null;
   uploadedPesData: PesPatternData | null;
   machineInfo: MachineInfo | null;
+  patternOffset?: { x: number; y: number };
+  patternRotation?: number;
 }
 
 export function useCanvasViewport({
@@ -30,6 +33,8 @@ export function useCanvasViewport({
   pesData,
   uploadedPesData,
   machineInfo,
+  patternOffset,
+  patternRotation = 0,
 }: UseCanvasViewportOptions) {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1);
@@ -70,13 +75,19 @@ export function useCanvasViewport({
     currentPattern !== lastProcessedPattern &&
     containerSize.width > 0
   ) {
-    const { bounds } = currentPattern;
-    const viewWidth = machineInfo
-      ? machineInfo.maxWidth
-      : bounds.maxX - bounds.minX;
-    const viewHeight = machineInfo
-      ? machineInfo.maxHeight
-      : bounds.maxY - bounds.minY;
+    const bounds = calculateRotatedBounds(
+      currentPattern.bounds,
+      uploadedPesData ? 0 : patternRotation,
+    );
+    // Include saved placement when fitting artwork before a machine connects.
+    const viewWidth = Math.max(
+      machineInfo?.maxWidth ?? 0,
+      bounds.maxX - bounds.minX + 2 * Math.abs(patternOffset?.x ?? 0),
+    );
+    const viewHeight = Math.max(
+      machineInfo?.maxHeight ?? 0,
+      bounds.maxY - bounds.minY + 2 * Math.abs(patternOffset?.y ?? 0),
+    );
 
     const newInitialScale = calculateInitialScale(
       containerSize.width,
@@ -216,8 +227,10 @@ export function useCanvasViewport({
   const handleStageDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
       const stage = e.target.getStage();
-      if (stage) {
+      if (stage && e.target === stage) {
         stage.container().style.cursor = "grab";
+        // Keep zoom controls anchored to the current view after a pan.
+        setStagePos({ x: stage.x(), y: stage.y() });
       }
     },
     [],

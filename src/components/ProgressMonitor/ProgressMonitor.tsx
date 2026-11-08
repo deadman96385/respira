@@ -67,9 +67,11 @@ export function ProgressMonitor() {
   );
 
   // Pattern store
-  const pesData = usePatternStore((state) => state.pesData);
   const uploadedPesData = usePatternStore((state) => state.uploadedPesData);
-  const displayPattern = uploadedPesData || pesData;
+  const restoredFromStorage = usePatternStore(
+    (state) => state.restoredFromStorage,
+  );
+  const displayPattern = restoredFromStorage ? null : uploadedPesData;
 
   // State indicators
   const isMaskTraceComplete =

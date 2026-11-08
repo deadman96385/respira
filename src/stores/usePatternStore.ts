@@ -1,9 +1,11 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import type { PesPatternData } from "../formats/import/pesImporter";
 import { onPatternDeleted } from "./storeEvents";
 import { calculatePatternCenter } from "../components/PatternCanvas/patternCanvasHelpers";
 import { calculateRotatedBounds } from "../utils/rotationUtils";
+import { createWorkspaceStorage } from "../services/WorkspaceStorage";
 
 // Conditional logging for development only
 const isDev = import.meta.env.DEV;
@@ -20,6 +22,7 @@ interface PatternState {
   uploadedPatternOffset: { x: number; y: number }; // Offset with center shift compensation
 
   patternUploaded: boolean;
+  restoredFromStorage: boolean;
 
   // Actions
   setPattern: (data: PesPatternData, fileName: string) => void;
@@ -34,6 +37,17 @@ interface PatternState {
   resetPatternOffset: () => void;
   resetRotation: () => void;
 }
+
+type PatternWorkspace = Pick<
+  PatternState,
+  | "pesData"
+  | "currentFileName"
+  | "patternOffset"
+  | "patternRotation"
+  | "uploadedPesData"
+  | "uploadedPatternOffset"
+  | "patternUploaded"
+>;
 
 // Computed value types
 export interface PatternCenter {
@@ -53,93 +67,132 @@ export interface TransformedBounds {
   center: PatternCenter;
 }
 
-export const usePatternStore = create<PatternState>((set) => ({
-  // Initial state - original pattern
-  pesData: null,
-  currentFileName: "",
-  patternOffset: { x: 0, y: 0 },
-  patternRotation: 0,
-
-  // Uploaded pattern
-  uploadedPesData: null,
-  uploadedPatternOffset: { x: 0, y: 0 },
-
-  patternUploaded: false,
-
-  // Set pattern data and filename (replaces current pattern)
-  setPattern: (data: PesPatternData, fileName: string) => {
-    set({
-      pesData: data,
-      currentFileName: fileName,
+export const usePatternStore = create<PatternState>()(
+  persist(
+    (set) => ({
+      // Initial state - original pattern
+      pesData: null,
+      currentFileName: "",
       patternOffset: { x: 0, y: 0 },
       patternRotation: 0,
-      uploadedPesData: null, // Clear uploaded pattern when loading new
-      uploadedPatternOffset: { x: 0, y: 0 },
-      patternUploaded: false,
-    });
-  },
 
-  // Update pattern offset (for original pattern only)
-  setPatternOffset: (x: number, y: number) => {
-    set({ patternOffset: { x, y } });
-  },
-
-  // Set pattern rotation (for original pattern only)
-  setPatternRotation: (rotation: number) => {
-    set({ patternRotation: rotation % 360 });
-    if (isDev) {
-      console.log("[PatternStore] Pattern rotation changed:", rotation);
-    }
-  },
-
-  // Set uploaded pattern data (called after upload completes)
-  setUploadedPattern: (
-    uploadedData: PesPatternData,
-    uploadedOffset: { x: number; y: number },
-    fileName?: string,
-  ) => {
-    set({
-      uploadedPesData: uploadedData,
-      uploadedPatternOffset: uploadedOffset,
-      patternUploaded: true,
-      // Optionally set filename if provided (for resume/reconnect scenarios)
-      ...(fileName && { currentFileName: fileName }),
-    });
-    if (isDev) {
-      console.log("[PatternStore] Uploaded pattern set");
-    }
-  },
-
-  // Clear uploaded pattern (called when deleting from machine)
-  // This reverts to pre-upload state, keeping pesData so user can re-adjust and re-upload
-  clearUploadedPattern: () => {
-    if (isDev) {
-      console.log("[PatternStore] CLEARING uploaded pattern...");
-    }
-    set({
+      // Uploaded pattern
       uploadedPesData: null,
       uploadedPatternOffset: { x: 0, y: 0 },
+
       patternUploaded: false,
-      // Keep pesData, currentFileName, patternOffset, patternRotation
-      // so user can adjust and re-upload
-    });
-    if (isDev) {
-      console.log(
-        "[PatternStore] Uploaded pattern cleared - back to editable mode",
-      );
-    }
-  },
+      restoredFromStorage: false,
 
-  // Reset pattern offset to default
-  resetPatternOffset: () => {
-    set({ patternOffset: { x: 0, y: 0 } });
-  },
+      // Set pattern data and filename (replaces current pattern)
+      setPattern: (data: PesPatternData, fileName: string) => {
+        set({
+          pesData: data,
+          currentFileName: fileName,
+          patternOffset: { x: 0, y: 0 },
+          patternRotation: 0,
+          uploadedPesData: null, // Clear uploaded pattern when loading new
+          uploadedPatternOffset: { x: 0, y: 0 },
+          patternUploaded: false,
+          restoredFromStorage: false,
+        });
+      },
 
-  // Reset pattern rotation to default
-  resetRotation: () => {
-    set({ patternRotation: 0 });
-  },
-}));
+      // Update pattern offset (for original pattern only)
+      setPatternOffset: (x: number, y: number) => {
+        set({ patternOffset: { x, y } });
+      },
+
+      // Set pattern rotation (for original pattern only)
+      setPatternRotation: (rotation: number) => {
+        set({ patternRotation: rotation % 360 });
+        if (isDev) {
+          console.log("[PatternStore] Pattern rotation changed:", rotation);
+        }
+      },
+
+      // Set uploaded pattern data (called after upload completes)
+      setUploadedPattern: (
+        uploadedData: PesPatternData,
+        uploadedOffset: { x: number; y: number },
+        fileName?: string,
+      ) => {
+        set({
+          uploadedPesData: uploadedData,
+          uploadedPatternOffset: uploadedOffset,
+          patternUploaded: true,
+          restoredFromStorage: false,
+          // Optionally set filename if provided (for resume/reconnect scenarios)
+          ...(fileName && { currentFileName: fileName }),
+        });
+        if (isDev) {
+          console.log("[PatternStore] Uploaded pattern set");
+        }
+      },
+
+      // Clear uploaded pattern (called when deleting from machine)
+      // This reverts to pre-upload state, keeping pesData so user can re-adjust and re-upload
+      clearUploadedPattern: () => {
+        if (isDev) {
+          console.log("[PatternStore] CLEARING uploaded pattern...");
+        }
+        set({
+          uploadedPesData: null,
+          uploadedPatternOffset: { x: 0, y: 0 },
+          patternUploaded: false,
+          restoredFromStorage: false,
+          // Keep pesData, currentFileName, patternOffset, patternRotation
+          // so user can adjust and re-upload
+        });
+        if (isDev) {
+          console.log(
+            "[PatternStore] Uploaded pattern cleared - back to editable mode",
+          );
+        }
+      },
+
+      // Reset pattern offset to default
+      resetPatternOffset: () => {
+        set({ patternOffset: { x: 0, y: 0 } });
+      },
+
+      // Reset pattern rotation to default
+      resetRotation: () => {
+        set({ patternRotation: 0 });
+      },
+    }),
+    {
+      name: "respira-workspace-v1",
+      storage: createWorkspaceStorage<PatternWorkspace>(),
+      skipHydration: true,
+      partialize: (state) => ({
+        pesData: state.pesData,
+        currentFileName: state.currentFileName,
+        patternOffset: state.patternOffset,
+        patternRotation: state.patternRotation,
+        uploadedPesData: state.uploadedPesData,
+        uploadedPatternOffset: state.uploadedPatternOffset,
+        patternUploaded: state.patternUploaded,
+      }),
+      merge: (saved, current) => {
+        // A slow storage read must not replace a newly chosen or recovered pattern.
+        if (
+          current.pesData ||
+          current.uploadedPesData ||
+          !saved ||
+          typeof saved !== "object"
+        )
+          return current;
+        const workspace = saved as PatternWorkspace;
+        if (!workspace.pesData && !workspace.uploadedPesData) return current;
+        return { ...current, ...workspace, restoredFromStorage: true };
+      },
+      onRehydrateStorage: () => (_state, error) => {
+        if (error)
+          console.warn("[Workspace] Could not restore artwork:", error);
+      },
+    },
+  ),
+);
 
 // Selector hooks for common use cases
 export const usePesData = () => usePatternStore((state) => state.pesData);
