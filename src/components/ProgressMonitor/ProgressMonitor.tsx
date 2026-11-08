@@ -99,14 +99,17 @@ export function ProgressMonitor() {
   // Calculate time based on color blocks (matches Brother app calculation)
   const { totalMinutes, elapsedMinutes } = useMemo(() => {
     if (colorBlocks.length === 0) {
-      return { totalMinutes: 0, elapsedMinutes: 0 };
+      return {
+        totalMinutes: Math.ceil((patternInfo?.totalTime ?? 0) / 60),
+        elapsedMinutes: Math.floor((sewingProgress?.currentTime ?? 0) / 60),
+      };
     }
     const result = calculatePatternTime(colorBlocks, currentStitch);
     return {
       totalMinutes: result.totalMinutes,
       elapsedMinutes: result.elapsedMinutes,
     };
-  }, [colorBlocks, currentStitch]);
+  }, [colorBlocks, currentStitch, patternInfo, sewingProgress]);
 
   // Opt-in "start from color block" mode: blocks become clickable and the step
   // control shows before the first start. Switched off automatically once the
@@ -150,7 +153,9 @@ export function ProgressMonitor() {
             <CardTitle className="text-sm">Sewing Progress</CardTitle>
             {sewingProgress && (
               <CardDescription className="text-xs">
-                {progressPercent.toFixed(1)}% complete
+                {totalStitches > 0
+                  ? `${progressPercent.toFixed(1)}% complete`
+                  : "Recovering print information…"}
               </CardDescription>
             )}
           </div>
