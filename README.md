@@ -105,6 +105,15 @@ In fact, LLMs were a great tool for reverse engineering the Bluetooth Protocol a
 This project wouldn't have happened without the existence of LLMs.
 So, while LLMs are still being heavily oversold and the circulary economy of the big AI companies is not exactly a healthy market IMO, they do still offer _some_ benefits.
 
+## Inventor sew-out records
+
+After loading a PES and choosing its placement, **Save checked transfer report**
+downloads the exact checked PEN bytes with the source PES hash, rotation and
+placement. Keep it with the PES and attach it when recording a physical result
+in Ink Inventor. The report is a checked transfer snapshot; it does not assert
+that the machine received the file or completed a sew-out. Reimport older cached
+patterns if their source PES identity is unavailable.
+
 ## License
 
 See `LICENSE.md`.

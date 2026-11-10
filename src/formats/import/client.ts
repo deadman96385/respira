@@ -7,6 +7,7 @@ import { enhanceThreadWithBrotherColor } from "../../utils/brotherColors";
 export type PyodideState = "not_loaded" | "loading" | "ready" | "error";
 
 export interface PesPatternData {
+  sourcePesSha256?: string;
   stitches: number[][]; // Original PES stitches (for reference)
   threads: Array<{
     color: number;
