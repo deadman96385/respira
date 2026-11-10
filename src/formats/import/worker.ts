@@ -1,6 +1,7 @@
 import { loadPyodide, type PyodideInterface } from "pyodide";
 import { normalizePesCommands, type PesCommands } from "./normalizeCommands";
 import { encodeStitchesToPen } from "../pen/encoder";
+import { sha256 } from "../pen/handoffReport";
 
 // Message types from main thread
 export type WorkerMessage =
@@ -15,6 +16,7 @@ export type WorkerResponse =
   | {
       type: "CONVERT_COMPLETE";
       data: {
+        sourcePesSha256: string;
         stitches: number[][];
         threads: Array<{
           color: number;
@@ -150,6 +152,7 @@ async function convertPesToPen(fileData: ArrayBuffer) {
   try {
     // Convert to Uint8Array
     const uint8Array = new Uint8Array(fileData);
+    const sourcePesSha256 = await sha256(uint8Array);
 
     // Write file to Pyodide virtual filesystem
     const tempFileName = "/tmp/pattern.pes";
@@ -300,6 +303,7 @@ pattern = pystitch.read('${tempFileName}')
     self.postMessage({
       type: "CONVERT_COMPLETE",
       data: {
+        sourcePesSha256,
         stitches,
         threads,
         uniqueColors,

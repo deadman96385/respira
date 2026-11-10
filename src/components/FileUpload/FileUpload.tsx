@@ -33,6 +33,7 @@ import { PyodideProgress } from "./PyodideProgress";
 import { UploadButton } from "./UploadButton";
 import { UploadProgress } from "./UploadProgress";
 import { BoundsValidator } from "./BoundsValidator";
+import { createHandoffReport } from "../../formats/pen/handoffReport";
 
 export function FileUpload() {
   // Machine store
@@ -100,6 +101,7 @@ export function FileUpload() {
 
   const [localPesData, setLocalPesData] = useState<PesPatternData | null>(null);
   const [fileName, setFileName] = useState<string>("");
+  const [reportError, setReportError] = useState("");
   const [fileService] = useState<IFileService>(() => createFileService());
 
   // Use prop pesData if available (from cached pattern), otherwise use local state
@@ -157,6 +159,34 @@ export function FileUpload() {
     patternOffset,
     patternRotation,
   });
+
+  const saveTransferReport = useCallback(async () => {
+    if (!pesData) return;
+    try {
+      setReportError("");
+      const report = await createHandoffReport(
+        pesData,
+        patternRotation,
+        patternOffset,
+      );
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(report, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = displayFileName.replace(/\.pes$/i, "") + ".handoff.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (error) {
+      setReportError(
+        error instanceof Error
+          ? error.message
+          : "Could not save transfer report",
+      );
+    }
+  }, [pesData, patternRotation, patternOffset, displayFileName]);
 
   const borderColor = pesData
     ? "border-secondary-600 dark:border-secondary-500"
@@ -236,6 +266,28 @@ export function FileUpload() {
           />
         </div>
 
+        {pesData && (
+          <div className="mb-3">
+            <button
+              type="button"
+              onClick={saveTransferReport}
+              disabled={isUploading || !boundsCheck.fits}
+              className="text-sm underline text-secondary-700 dark:text-secondary-300 disabled:opacity-50"
+            >
+              Save checked transfer report
+            </button>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              Keep this report with your PES for an Inventor sew-out record. It
+              records the checked placement; it does not claim a completed
+              sew-out.
+            </p>
+            {reportError && (
+              <p role="alert" className="text-xs text-red-700">
+                {reportError}
+              </p>
+            )}
+          </div>
+        )}
         <PyodideProgress
           pyodideReady={pyodideReady}
           pyodideProgress={pyodideProgress}
