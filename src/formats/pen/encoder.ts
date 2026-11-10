@@ -1,393 +1,119 @@
-/**
- * PEN Format Encoder
- *
- * This module contains the logic for encoding embroidery stitches into the Brother PP1 PEN format.
- * The PEN format uses absolute coordinates shifted left by 3 bits, with flags in the low 3 bits.
- */
-
-import { MOVE, TRIM, END } from "../import/constants";
-
-// PEN format flags for Brother machines
-const PEN_FEED_DATA = 0x01; // Bit 0: Jump stitch (move without stitching)
-const PEN_CUT_DATA = 0x02; // Bit 1: Trim/cut thread command
-const PEN_COLOR_END = 0x03; // Last stitch before color change
-const PEN_DATA_END = 0x05; // Last stitch of entire pattern
-
-// Constants from PesxToPen.cs
-const FEED_LENGTH = 50; // Long jump threshold requiring lock stitches and cut
-const TARGET_LENGTH = 8.0; // Target accumulated length for lock stitch direction
-const MAX_POINTS = 5; // Maximum points to accumulate for lock stitch direction
-export const LOCK_STITCH_JUMP_SIZE = 2.0;
-const LOCK_STITCH_SCALE = LOCK_STITCH_JUMP_SIZE / 8.0; // Scale the magnitude-8 vector down to 4
-
-export interface StitchData {
-  x: number;
-  y: number;
-  cmd: number;
-  colorIndex: number;
-}
+import { MOVE, TRIM, COLOR_CHANGE, STOP, END } from "../import/constants";
+import { decodePenData } from "./decoder";
 
 export interface PenEncodingResult {
   penBytes: number[];
-  bounds: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-  };
+  bounds: { minX: number; maxX: number; minY: number; maxY: number };
 }
 
-/**
- * Encode a stitch position to PEN bytes (4 bytes: X_low, X_high, Y_low, Y_high)
- * Coordinates are shifted left by 3 bits to make room for flags in low 3 bits
- */
+/** Coordinates are signed 13-bit values in 0.1 mm units. */
 export function encodeStitchPosition(x: number, y: number): number[] {
-  const xEnc = (Math.round(x) << 3) & 0xffff;
-  const yEnc = (Math.round(y) << 3) & 0xffff;
-
-  return [xEnc & 0xff, (xEnc >> 8) & 0xff, yEnc & 0xff, (yEnc >> 8) & 0xff];
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    Math.round(x) < -4096 ||
+    Math.round(x) > 4095 ||
+    Math.round(y) < -4096 ||
+    Math.round(y) > 4095
+  )
+    throw new Error("Pattern coordinates exceed the PEN coordinate range");
+  const a = (Math.round(x) << 3) & 0xffff;
+  const b = (Math.round(y) << 3) & 0xffff;
+  return [a & 255, a >> 8, b & 255, b >> 8];
 }
 
 /**
- * Calculate lock stitch direction by accumulating movement vectors
- * Matches the C# logic that accumulates coordinates until reaching threshold
- *
- * Three use cases from C# ConvertEmb function:
- * - Loop A (Jump/Entry): lookAhead=true - Hides knot under upcoming stitches
- * - Loop B (End/Cut): lookAhead=false - Hides knot inside previous stitches
- * - Loop C (Color Change): lookAhead=true - Aligns knot with stop event data
- *
- * @param stitches Array of stitches to analyze [x, y, cmd, colorIndex]
- * @param currentIndex Current stitch index
- * @param lookAhead If true, look forward; if false, look backward
- * @returns Direction vector components (normalized and scaled to magnitude 8.0)
- */
-export function calculateLockDirection(
-  stitches: number[][],
-  currentIndex: number,
-  lookAhead: boolean,
-): { dirX: number; dirY: number } {
-  let accumulatedX = 0;
-  let accumulatedY = 0;
-  let maxLength = 0;
-  let bestX = 0;
-  let bestY = 0;
-
-  const step = lookAhead ? 1 : -1;
-  const maxIterations = lookAhead
-    ? Math.min(MAX_POINTS, stitches.length - currentIndex - 1)
-    : Math.min(MAX_POINTS, currentIndex);
-
-  for (let i = 0; i < maxIterations; i++) {
-    const idx = currentIndex + step * (i + 1);
-    if (idx < 0 || idx >= stitches.length) break;
-
-    const stitch = stitches[idx];
-    const cmd = stitch[2];
-
-    // Skip MOVE/JUMP stitches
-    if ((cmd & MOVE) !== 0) continue;
-
-    // Accumulate relative coordinates
-    const deltaX =
-      Math.round(stitch[0]) - Math.round(stitches[currentIndex][0]);
-    const deltaY =
-      Math.round(stitch[1]) - Math.round(stitches[currentIndex][1]);
-
-    accumulatedX += deltaX;
-    accumulatedY += deltaY;
-
-    const length = Math.sqrt(
-      accumulatedX * accumulatedX + accumulatedY * accumulatedY,
-    );
-
-    // Track the maximum length vector seen so far
-    if (length > maxLength) {
-      maxLength = length;
-      bestX = accumulatedX;
-      bestY = accumulatedY;
-    }
-
-    // If we've accumulated enough length, use current vector
-    if (length >= TARGET_LENGTH) {
-      return {
-        dirX: (accumulatedX * 8.0) / length,
-        dirY: (accumulatedY * 8.0) / length,
-      };
-    }
-  }
-
-  // If we didn't reach target length, use the best vector we found
-  if (maxLength > 0.1) {
-    return {
-      dirX: (bestX * 8.0) / maxLength,
-      dirY: (bestY * 8.0) / maxLength,
-    };
-  }
-
-  // Fallback: diagonal direction with magnitude 8.0
-  const mag = 8.0 / Math.sqrt(2); // ~5.66 for diagonal
-  return { dirX: mag, dirY: mag };
-}
-
-/**
- * Generate lock/tack stitches at a position, rotated toward the direction of travel
- * Matches Nuihajime_TomeDataPlus from PesxToPen.cs with vector rotation
- * @param x X coordinate
- * @param y Y coordinate
- * @param dirX Direction X component (magnitude ~8.0)
- * @param dirY Direction Y component (magnitude ~8.0)
- * @returns Array of PEN bytes for lock stitches (32 bytes = 8 stitches * 4 bytes)
- */
-export function generateLockStitches(
-  x: number,
-  y: number,
-  dirX: number,
-  dirY: number,
-): number[] {
-  const lockBytes: number[] = [];
-
-  // Generate 8 lock stitches in alternating pattern
-  // Pattern from C# (from Nuihajime_TomeDataPlus): [+x, +y, -x, -y] repeated
-  // The direction vector has magnitude ~8.0, so we need to scale it down
-  // to get reasonable lock stitch size (approximately 0.4 units)
-  const scaledDirX = dirX * LOCK_STITCH_SCALE;
-  const scaledDirY = dirY * LOCK_STITCH_SCALE;
-
-  // Generate 8 stitches alternating between forward and backward
-  for (let i = 0; i < 8; i++) {
-    // Alternate between forward (+) and backward (-) direction
-    const sign = i % 2 === 0 ? 1 : -1;
-    const xAdd = scaledDirX * sign;
-    const yAdd = scaledDirY * sign;
-    lockBytes.push(...encodeStitchPosition(x + xAdd, y + yAdd));
-  }
-
-  return lockBytes;
-}
-
-/**
- * Encode stitches array to PEN format bytes
- *
- * @param stitches Array of stitches in format [x, y, cmd, colorIndex]
- * @returns PEN encoding result with bytes and bounds
+ * Preserve authored needle placements, jumps and cuts. PES already contains its
+ * securing stitches; adding locks or cutting long jumps changes the inspected
+ * plan. STOP pauses with the same thread using a PEN color-boundary marker.
  */
 export function encodeStitchesToPen(stitches: number[][]): PenEncodingResult {
-  // Track bounds
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  const penStitches: number[] = [];
-
-  // Track position for calculating jump distances
-  let prevX = 0;
-  let prevY = 0;
-
-  for (let i = 0; i < stitches.length; i++) {
-    const stitch = stitches[i];
-    const absX = Math.round(stitch[0]);
-    const absY = Math.round(stitch[1]);
-    const cmd = stitch[2];
-    const stitchColor = stitch[3]; // Color index from PyStitch
-
-    // Track bounds for non-jump stitches (regular stitches, not MOVE/JUMP)
-    // A stitch is trackable if it's not a MOVE command
-    if ((cmd & MOVE) === 0) {
-      minX = Math.min(minX, absX);
-      maxX = Math.max(maxX, absX);
-      minY = Math.min(minY, absY);
-      maxY = Math.max(maxY, absY);
-    }
-
-    const isFirstStitch = i == 0;
-
-    // Check for long jumps that need lock stitches and cuts
-    if (cmd & MOVE) {
-      const jumpDist = Math.sqrt((absX - prevX) ** 2 + (absY - prevY) ** 2);
-
-      if (!isFirstStitch && jumpDist > FEED_LENGTH) {
-        // Long jump - add finishing lock stitches at previous position
-        // Loop B: End/Cut Vector - Look BACKWARD at previous stitches
-        // This hides the knot inside the embroidery we just finished
-        const finishDir = calculateLockDirection(stitches, i - 1, false);
-        penStitches.push(
-          ...generateLockStitches(prevX, prevY, finishDir.dirX, finishDir.dirY),
-        );
-
-        // Encode jump with both FEED and CUT flags
-        const xEncoded = (absX << 3) & 0xffff;
-        let yEncoded = (absY << 3) & 0xffff;
-        yEncoded |= PEN_FEED_DATA; // Jump flag
-        yEncoded |= PEN_CUT_DATA; // Cut flag for long jumps
-
-        penStitches.push(
-          xEncoded & 0xff,
-          (xEncoded >> 8) & 0xff,
-          yEncoded & 0xff,
-          (yEncoded >> 8) & 0xff,
-        );
-
-        // Add starting lock stitches at new position
-        // Loop A: Jump/Entry Vector - Look FORWARD at upcoming stitches
-        // This hides the knot under the stitches we're about to make
-        const startDir = calculateLockDirection(stitches, i, true);
-        penStitches.push(
-          ...generateLockStitches(absX, absY, startDir.dirX, startDir.dirY),
-        );
-
-        // Update position and continue
-        prevX = absX;
-        prevY = absY;
-        continue;
-      }
-    }
-
-    // Encode absolute coordinates with flags in low 3 bits
-    // Shift coordinates left by 3 bits to make room for flags
-    let xEncoded = (absX << 3) & 0xffff;
-    let yEncoded = (absY << 3) & 0xffff;
-
-    // Add command flags to Y-coordinate based on stitch type
-    if (cmd & MOVE) {
-      // MOVE/JUMP: Set bit 0 (FEED_DATA) - move without stitching
-      yEncoded |= PEN_FEED_DATA;
-    }
-    if (cmd & TRIM) {
-      // TRIM: Set bit 1 (CUT_DATA) - cut thread command
-      yEncoded |= PEN_CUT_DATA;
-    }
-
-    // Check if this is the last stitch
-    const isLastStitch = i === stitches.length - 1 || (cmd & END) !== 0;
-
-    // Check for color change by comparing stitch color index
-    const nextStitch = stitches[i + 1];
-    const nextStitchColor = nextStitch?.[3];
-    const isColorChange =
-      !isLastStitch &&
-      nextStitchColor !== undefined &&
-      nextStitchColor !== stitchColor;
-
-    // Mark the very last stitch of the pattern with DATA_END
-    if (isLastStitch) {
-      xEncoded = (xEncoded & 0xfff8) | PEN_DATA_END;
-    }
-
-    // Add the encoded stitch
-    penStitches.push(
-      xEncoded & 0xff,
-      (xEncoded >> 8) & 0xff,
-      yEncoded & 0xff,
-      (yEncoded >> 8) & 0xff,
-    );
-
-    // Update position for next iteration
-    prevX = absX;
-    prevY = absY;
-
-    if (isFirstStitch) {
-      // Add starting lock stitches at the very beginning of the pattern
-      // Matches C# behavior: Nuihajime_TomeDataPlus is called when counter <= 2
-
-      // Calculate direction for starting locks (look forward into the pattern)
-      const startDir = calculateLockDirection(stitches, i, true);
-      penStitches.push(
-        ...generateLockStitches(absX, absY, startDir.dirX, startDir.dirY),
-      );
-    }
-
-    // Handle color change: finishing lock, COLOR_END+CUT, jump, starting lock
-    if (isColorChange) {
-      const nextStitchCmd = nextStitch[2];
-      const nextStitchX = Math.round(nextStitch[0]);
-      const nextStitchY = Math.round(nextStitch[1]);
-      const nextIsJump = (nextStitchCmd & MOVE) !== 0;
-
-      // Step 1: Add finishing lock stitches at end of current color
-      // Loop C: Color Change Vector - Look FORWARD at the stop event data
-      // This aligns the knot with the stop command's data block for correct tension
-      const finishDir = calculateLockDirection(stitches, i, true);
-      penStitches.push(
-        ...generateLockStitches(absX, absY, finishDir.dirX, finishDir.dirY),
-      );
-
-      // Step 2: Add COLOR_END + CUT command at CURRENT position (same stitch!)
-      // This is where the machine pauses and waits for the user to change thread color
-      // IMPORTANT: COLOR_END and CUT must be on the SAME stitch, not separate stitches
-      let colorEndCutXEncoded = (absX << 3) & 0xffff;
-      let colorEndCutYEncoded = (absY << 3) & 0xffff;
-
-      // Add COLOR_END flag to X coordinate and CUT flag to Y coordinate
-      colorEndCutXEncoded = (colorEndCutXEncoded & 0xfff8) | PEN_COLOR_END;
-      colorEndCutYEncoded |= PEN_CUT_DATA;
-
-      penStitches.push(
-        colorEndCutXEncoded & 0xff,
-        (colorEndCutXEncoded >> 8) & 0xff,
-        colorEndCutYEncoded & 0xff,
-        (colorEndCutYEncoded >> 8) & 0xff,
-      );
-
-      // Machine pauses here for color change
-      // After user changes color, the following stitches execute with the new color
-
-      // Step 3: If next stitch is a JUMP, encode it and skip it in the loop
-      // Otherwise, add a jump ourselves if positions differ
-      const jumpToX = nextStitchX;
-      const jumpToY = nextStitchY;
-
-      if (nextIsJump) {
-        // The PES has a JUMP to the new color position, we'll add it here and skip it later
-        i++; // Skip the JUMP stitch since we're processing it here
-      }
-
-      // Add jump to new position (if position changed)
-      if (jumpToX !== absX || jumpToY !== absY) {
-        const jumpXEncoded = (jumpToX << 3) & 0xffff;
-        let jumpYEncoded = (jumpToY << 3) & 0xffff;
-        jumpYEncoded |= PEN_FEED_DATA; // Jump flag
-
-        penStitches.push(
-          jumpXEncoded & 0xff,
-          (jumpXEncoded >> 8) & 0xff,
-          jumpYEncoded & 0xff,
-          (jumpYEncoded >> 8) & 0xff,
-        );
-      }
-
-      // Step 4: Add starting lock stitches at the new position
-      // Loop A: Jump/Entry Vector - Look FORWARD at upcoming stitches in new color
-      // This hides the knot under the stitches we're about to make
-      const nextStitchIdx = nextIsJump ? i + 2 : i + 1;
-      const startDir = calculateLockDirection(
-        stitches,
-        nextStitchIdx < stitches.length ? nextStitchIdx : i,
-        true,
-      );
-      penStitches.push(
-        ...generateLockStitches(jumpToX, jumpToY, startDir.dirX, startDir.dirY),
-      );
-
-      // Update position
-      prevX = jumpToX;
-      prevY = jumpToY;
-    }
-
-    // Check for end command
-    if ((cmd & END) !== 0) {
-      break;
-    }
+  const bytes: number[] = [];
+  let previous: [number, number] | null = null;
+  let currentColor = stitches[0]?.[3] ?? 0;
+  let entering = false;
+  let boundaryCutAvailable = false;
+  function append(x: number, y: number, xFlags = 0, yFlags = 0) {
+    const point = encodeStitchPosition(x, y);
+    point[0] |= xFlags;
+    point[2] |= yFlags;
+    bytes.push(...point);
+    previous = [Math.round(x), Math.round(y)];
   }
-
+  function boundary(x: number, y: number) {
+    // An adjacent authored trim can share the boundary's cut record.
+    if (
+      bytes.length >= 4 &&
+      previous?.[0] === Math.round(x) &&
+      previous?.[1] === Math.round(y) &&
+      (bytes[bytes.length - 2] & 7) === 2 &&
+      (bytes[bytes.length - 4] & 7) === 0
+    ) {
+      bytes[bytes.length - 4] |= 3;
+      boundaryCutAvailable = false;
+    } else {
+      append(x, y, 3, 2);
+      boundaryCutAvailable = true;
+    }
+    entering = true;
+  }
+  for (const row of stitches) {
+    const [x, y, command, color] = row;
+    if (
+      row.length < 4 ||
+      !Number.isSafeInteger(command) ||
+      !Number.isSafeInteger(color) ||
+      color < 0 ||
+      ![0, MOVE, TRIM, MOVE | TRIM, COLOR_CHANGE, STOP, END].includes(command)
+    ) {
+      throw new Error("Pattern contains an invalid embroidery command");
+    }
+    encodeStitchPosition(x, y);
+    if (command & END) break;
+    if (command === COLOR_CHANGE || command === STOP) {
+      boundary(x, y);
+      currentColor = color + 1;
+      continue;
+    }
+    // Older cached patterns express boundaries only through their color index.
+    if (color !== currentColor) {
+      if (previous) boundary(previous[0], previous[1]);
+      currentColor = color;
+    }
+    if (entering && command === 0) {
+      if (
+        previous &&
+        (previous[0] !== Math.round(x) || previous[1] !== Math.round(y))
+      ) {
+        append(x, y, 0, 1);
+      }
+      entering = false;
+    }
+    // Ink/Stitch PES commonly writes COLOR_CHANGE then TRIM. PEN requires
+    // these flags together, so consume that one authored trim at the boundary.
+    if (
+      command === TRIM &&
+      boundaryCutAvailable &&
+      previous?.[0] === Math.round(x) &&
+      previous?.[1] === Math.round(y)
+    ) {
+      boundaryCutAvailable = false;
+      continue;
+    }
+    boundaryCutAvailable = false;
+    append(x, y, 0, (command & MOVE ? 1 : 0) | (command & TRIM ? 2 : 0));
+    if (command & MOVE) entering = false;
+  }
+  if (!bytes.length) {
+    return { penBytes: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
+  }
+  // End is a flag on the final record, never another needle penetration. Keep
+  // a final pause intact by following it with a non-sewing end record.
+  if ((bytes[bytes.length - 4] & 7) === 3)
+    append(previous![0], previous![1], 5, 1);
+  else bytes[bytes.length - 4] |= 5;
   return {
-    penBytes: penStitches,
-    bounds: {
-      minX: minX === Infinity ? 0 : minX,
-      maxX: maxX === -Infinity ? 0 : maxX,
-      minY: minY === Infinity ? 0 : minY,
-      maxY: maxY === -Infinity ? 0 : maxY,
-    },
+    penBytes: bytes,
+    bounds: decodePenData(new Uint8Array(bytes)).bounds,
   };
 }

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import type { PesPatternData } from "../../formats/import/pesImporter";
 import type { MachineInfo } from "../../types/machine";
-import { calculateRotatedBounds } from "../../utils/rotationUtils";
-import { calculatePatternCenter } from "../../components/PatternCanvas/patternCanvasHelpers";
+import { preparePatternUpload } from "../../formats/pen/prepareUpload";
+import { validatePenPlacement } from "../../formats/pen/validate";
 
 export interface PatternBoundsCheckResult {
   fits: boolean;
@@ -37,61 +37,24 @@ export function usePatternValidation({
       return { fits: true, error: null };
     }
 
-    // Calculate rotated bounds if rotation is applied
-    let bounds = pesData.bounds;
-    if (patternRotation && patternRotation !== 0) {
-      bounds = calculateRotatedBounds(pesData.bounds, patternRotation);
-    }
-
-    const { maxWidth, maxHeight } = machineInfo;
-
-    // The patternOffset represents the pattern's CENTER position (due to offsetX/offsetY in canvas)
-    // So we need to calculate bounds relative to the center
-    const center = calculatePatternCenter(bounds);
-
-    // Calculate actual bounds in world coordinates
-    const patternMinX = patternOffset.x - center.x + bounds.minX;
-    const patternMaxX = patternOffset.x - center.x + bounds.maxX;
-    const patternMinY = patternOffset.y - center.y + bounds.minY;
-    const patternMaxY = patternOffset.y - center.y + bounds.maxY;
-
-    // Hoop bounds (centered at origin)
-    const hoopMinX = -maxWidth / 2;
-    const hoopMaxX = maxWidth / 2;
-    const hoopMinY = -maxHeight / 2;
-    const hoopMaxY = maxHeight / 2;
-
-    // Check if pattern exceeds hoop bounds
-    const exceedsLeft = patternMinX < hoopMinX;
-    const exceedsRight = patternMaxX > hoopMaxX;
-    const exceedsTop = patternMinY < hoopMinY;
-    const exceedsBottom = patternMaxY > hoopMaxY;
-
-    if (exceedsLeft || exceedsRight || exceedsTop || exceedsBottom) {
-      const directions = [];
-      if (exceedsLeft)
-        directions.push(
-          `left by ${((hoopMinX - patternMinX) / 10).toFixed(1)}mm`,
-        );
-      if (exceedsRight)
-        directions.push(
-          `right by ${((patternMaxX - hoopMaxX) / 10).toFixed(1)}mm`,
-        );
-      if (exceedsTop)
-        directions.push(
-          `top by ${((hoopMinY - patternMinY) / 10).toFixed(1)}mm`,
-        );
-      if (exceedsBottom)
-        directions.push(
-          `bottom by ${((patternMaxY - hoopMaxY) / 10).toFixed(1)}mm`,
-        );
-
+    try {
+      const prepared = preparePatternUpload(
+        pesData,
+        patternRotation,
+        patternOffset,
+      );
+      validatePenPlacement(
+        prepared.pattern.penData,
+        prepared.offset,
+        machineInfo,
+      );
+      return { fits: true, error: null };
+    } catch (error) {
       return {
         fits: false,
-        error: `Pattern exceeds hoop bounds: ${directions.join(", ")}. Adjust pattern position in preview.`,
+        error:
+          error instanceof Error ? error.message : "Invalid encoded pattern",
       };
     }
-
-    return { fits: true, error: null };
   }, [pesData, machineInfo, patternOffset, patternRotation]);
 }

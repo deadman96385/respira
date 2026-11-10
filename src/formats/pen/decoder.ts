@@ -118,13 +118,12 @@ export function decodePenData(data: Uint8Array): DecodedPenData {
   for (let i = 0; i < stitches.length; i++) {
     const stitch = stitches[i];
 
-    // Track bounds (exclude jump stitches)
-    if (!stitch.isFeed) {
-      minX = Math.min(minX, stitch.x);
-      maxX = Math.max(maxX, stitch.x);
-      minY = Math.min(minY, stitch.y);
-      maxY = Math.max(maxY, stitch.y);
-    }
+    // Machine layout must accommodate every encoded move, including travel
+    // and command positions, as well as all needle penetrations.
+    minX = Math.min(minX, stitch.x);
+    maxX = Math.max(maxX, stitch.x);
+    minY = Math.min(minY, stitch.y);
+    maxY = Math.max(maxY, stitch.y);
 
     // Check for color change or data end
     if (stitch.isColorEnd) {
