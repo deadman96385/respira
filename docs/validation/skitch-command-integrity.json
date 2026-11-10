@@ -1,0 +1,166 @@
+{
+  "status": "passed",
+  "runtime": "actual browser Web Worker / Pyodide / bundled pystitch",
+  "bluetoothCommandsSent": 0,
+  "samples": [
+    {
+      "name": "dragon\\step-0600-3.pes",
+      "needles": 5384,
+      "sourceTrims": 15,
+      "encodedCuts": 15,
+      "pauses": 4,
+      "sourceNeedlesPreserved": true,
+      "sourceTrimsPreserved": true,
+      "checks": [
+        {
+          "angle": 0,
+          "bounds": {
+            "minX": -301,
+            "maxX": 301,
+            "minY": -352,
+            "maxY": 352
+          }
+        },
+        {
+          "angle": 45,
+          "bounds": {
+            "minX": -316,
+            "maxX": 308,
+            "minY": -305,
+            "maxY": 330
+          }
+        },
+        {
+          "angle": 90,
+          "bounds": {
+            "minX": -352,
+            "maxX": 352,
+            "minY": -301,
+            "maxY": 301
+          }
+        }
+      ]
+    },
+    {
+      "name": "kingfisher\\step-0600-5.pes",
+      "needles": 2237,
+      "sourceTrims": 8,
+      "encodedCuts": 8,
+      "pauses": 4,
+      "sourceNeedlesPreserved": true,
+      "sourceTrimsPreserved": true,
+      "checks": [
+        {
+          "angle": 0,
+          "bounds": {
+            "minX": -206,
+            "maxX": 206,
+            "minY": -352,
+            "maxY": 352
+          }
+        },
+        {
+          "angle": 45,
+          "bounds": {
+            "minX": -280,
+            "maxX": 352,
+            "minY": -288,
+            "maxY": 223
+          }
+        },
+        {
+          "angle": 90,
+          "bounds": {
+            "minX": -352,
+            "maxX": 352,
+            "minY": -206,
+            "maxY": 206
+          }
+        }
+      ]
+    },
+    {
+      "name": "origami-crane\\step-0600-6.pes",
+      "needles": 3520,
+      "sourceTrims": 14,
+      "encodedCuts": 14,
+      "pauses": 4,
+      "sourceNeedlesPreserved": true,
+      "sourceTrimsPreserved": true,
+      "checks": [
+        {
+          "angle": 0,
+          "bounds": {
+            "minX": -347,
+            "maxX": 347,
+            "minY": -338,
+            "maxY": 338
+          }
+        },
+        {
+          "angle": 45,
+          "bounds": {
+            "minX": -207,
+            "maxX": 449,
+            "minY": -461,
+            "maxY": 326
+          }
+        },
+        {
+          "angle": 90,
+          "bounds": {
+            "minX": -338,
+            "maxX": 338,
+            "minY": -347,
+            "maxY": 347
+          }
+        }
+      ]
+    },
+    {
+      "name": "red-panda\\step-0600-2.pes",
+      "needles": 5618,
+      "sourceTrims": 30,
+      "encodedCuts": 30,
+      "pauses": 4,
+      "sourceNeedlesPreserved": true,
+      "sourceTrimsPreserved": true,
+      "checks": [
+        {
+          "angle": 0,
+          "bounds": {
+            "minX": -341,
+            "maxX": 341,
+            "minY": -352,
+            "maxY": 352
+          }
+        },
+        {
+          "angle": 45,
+          "bounds": {
+            "minX": -346,
+            "maxX": 332,
+            "minY": -345,
+            "maxY": 348
+          }
+        },
+        {
+          "angle": 90,
+          "bounds": {
+            "minX": -352,
+            "maxX": 352,
+            "minY": -341,
+            "maxY": 341
+          }
+        }
+      ]
+    }
+  ],
+  "javascriptErrors": [],
+  "physicalSewOut": "unsewn",
+  "unitTests": 141,
+  "typescript": "passed",
+  "eslint": "passed",
+  "webBuild": "passed",
+  "deployment": "isolated branch; hardware sew-out pending"
+}

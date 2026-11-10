@@ -74,6 +74,18 @@ uses IndexedDB; clearing this site's browser data removes the saved workspace.
 
 ## Pattern Preparation
 
+PES import preserves the authored needle placements, jumps, trims, and pauses.
+Respira does not add securing stitches or cut long jumps automatically; prepare
+those in the digitizing software and inspect the stitch plan before importing.
+An explicit stop becomes a separate sewing step using the same thread. PEN
+color boundaries combine a neighboring trim into the machine's single
+pause-and-cut command.
+
+Hoop validation uses the final PEN bytes, including travel moves and coordinate
+rounding after rotation. Upload validates those bytes and their placement again
+before deleting the machine's previous pattern. This is a software check;
+physical sewing still needs verification on the intended fabric and stabilizer.
+
 Embroidery software seems to be a niche product and thus is quite expensive.
 But fear not because the great people of [Ink/Stitch built and Inkscape extension](https://inkstitch.org/) which allows you to create embroidery patterns with Free and Open Source software.
 How great is that?

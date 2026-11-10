@@ -1,5 +1,5 @@
 import { loadPyodide, type PyodideInterface } from "pyodide";
-import { STITCH, MOVE, TRIM, END } from "./constants";
+import { normalizePesCommands, type PesCommands } from "./normalizeCommands";
 import { encodeStitchesToPen } from "../pen/encoder";
 
 // Message types from main thread
@@ -50,14 +50,6 @@ console.log("[PatternConverterWorker] Worker script loaded");
 
 let pyodide: PyodideInterface | null = null;
 let isInitializing = false;
-
-// JavaScript constants module to expose to Python
-const jsEmbConstants = {
-  STITCH,
-  MOVE,
-  TRIM,
-  END,
-};
 
 /**
  * Initialize Pyodide with progress tracking
@@ -156,9 +148,6 @@ async function convertPesToPen(fileData: ArrayBuffer) {
   }
 
   try {
-    // Register our JavaScript constants module for Python to import
-    pyodide.registerJsModule("js_emb_constants", jsEmbConstants);
-
     // Convert to Uint8Array
     const uint8Array = new Uint8Array(fileData);
 
@@ -169,83 +158,15 @@ async function convertPesToPen(fileData: ArrayBuffer) {
     // Read the pattern using PyStitch (same logic as original converter)
     const result = await pyodide.runPythonAsync(`
 import pystitch
-from pystitch.EmbConstant import STITCH, JUMP, TRIM, STOP, END, COLOR_CHANGE
-from js_emb_constants import STITCH as JS_STITCH, MOVE as JS_MOVE, TRIM as JS_TRIM, END as JS_END
+from pystitch.EmbConstant import STITCH, JUMP, TRIM, STOP, END, COLOR_CHANGE, COMMAND_MASK
 
 # Read the PES file
 pattern = pystitch.read('${tempFileName}')
 
-def map_cmd(pystitch_cmd):
-    """Map PyStitch command to our JavaScript constant values
-
-    This ensures we have known, consistent values regardless of PyStitch's internal values.
-    Our JS constants use pyembroidery-style bitmask values:
-    STITCH = 0x00, MOVE/JUMP = 0x10, TRIM = 0x20, END = 0x100
-    """
-    if pystitch_cmd == STITCH:
-        return JS_STITCH
-    elif pystitch_cmd == JUMP:
-        return JS_MOVE  # PyStitch JUMP maps to our MOVE constant
-    elif pystitch_cmd == TRIM:
-        return JS_TRIM
-    elif pystitch_cmd == END:
-        return JS_END
-    else:
-        # For any other commands, preserve as bitmask
-        result = JS_STITCH
-        if pystitch_cmd & JUMP:
-            result |= JS_MOVE
-        if pystitch_cmd & TRIM:
-            result |= JS_TRIM
-        if pystitch_cmd & END:
-            result |= JS_END
-        return result
-
-# Use the raw stitches list which preserves command flags
-# Each stitch in pattern.stitches is [x, y, cmd]
-# We need to assign color indices based on COLOR_CHANGE commands
-# and filter out COLOR_CHANGE and STOP commands (they're not actual stitches)
-#
-# IMPORTANT: In PES files, COLOR_CHANGE commands can appear before finishing
-# stitches (tack/lock stitches) that semantically belong to the PREVIOUS color.
-# We need to detect this pattern and assign colors correctly.
-
-stitches_with_colors = []
-current_color = 0
-
-for i, stitch in enumerate(pattern.stitches):
-    x, y, cmd = stitch
-
-    # Check for color change command
-    if cmd == COLOR_CHANGE:
-        current_color += 1
-        continue
-
-    # Check for stop command - skip it
-    if cmd == STOP:
-        continue
-
-    # Check for standalone END command (no stitch data)
-    if cmd == END:
-        continue
-
-    # PyStitch inserts duplicate stitches at the same coordinates during color changes
-    # Skip any stitch that has the exact same position as the previous one
-    if len(stitches_with_colors) > 0:
-        last_stitch = stitches_with_colors[-1]
-        last_x, last_y = last_stitch[0], last_stitch[1]
-
-        if x == last_x and y == last_y:
-            # Duplicate position - skip it
-            continue
-
-    # Add actual stitch with current color index and mapped command
-    mapped_cmd = map_cmd(cmd)
-    stitches_with_colors.append([x, y, mapped_cmd, current_color])
-
 # Convert to JSON-serializable format
 {
-    'stitches': stitches_with_colors,
+    'stitches': pattern.stitches,
+    'commandConstants': dict(STITCH=STITCH, JUMP=JUMP, TRIM=TRIM, STOP=STOP, END=END, COLOR_CHANGE=COLOR_CHANGE, COMMAND_MASK=COMMAND_MASK),
     'threads': [
         {
             'color': thread.color if hasattr(thread, 'color') else 0,
@@ -258,13 +179,13 @@ for i, stitch in enumerate(pattern.stitches):
         for thread in pattern.threadlist
     ],
     'thread_count': len(pattern.threadlist),
-    'stitch_count': len(stitches_with_colors),
-    'color_changes': current_color
+    'stitch_count': sum(1 for x, y, cmd in pattern.stitches if (cmd & COMMAND_MASK) == STITCH)
 }
     `);
 
     // Convert Python result to JavaScript
     const data = result.toJs({ dict_converter: Object.fromEntries });
+    result.destroy();
 
     // Clean up virtual file
     try {
@@ -274,17 +195,30 @@ for i, stitch in enumerate(pattern.stitches):
     }
 
     // Extract stitches and validate
-    const stitches: number[][] = Array.from(
+    const rawStitches: number[][] = Array.from(
       data.stitches as ArrayLike<ArrayLike<number>>,
     ).map((stitch) => Array.from(stitch));
 
-    if (!stitches || stitches.length === 0) {
+    const normalized = normalizePesCommands(
+      rawStitches,
+      data.threads as Array<{
+        color?: number;
+        hex?: string;
+        catalog_number?: number | string;
+        brand?: string;
+        description?: string;
+        chart?: string;
+      }>,
+      data.commandConstants as PesCommands,
+    );
+    const stitches = normalized.stitches;
+    if (!normalized.stitchCount) {
       throw new Error("Invalid PES file or no stitches found");
     }
 
     // Extract thread data - preserve null values for unavailable metadata
     const threads = (
-      data.threads as Array<{
+      normalized.threads as Array<{
         color?: number;
         hex?: string;
         catalog_number?: number | string;
@@ -370,8 +304,8 @@ for i, stitch in enumerate(pattern.stitches):
         threads,
         uniqueColors,
         penData: penStitches, // Send as array (will be converted to Uint8Array in main thread)
-        colorCount: data.thread_count,
-        stitchCount: data.stitch_count,
+        colorCount: threads.length,
+        stitchCount: normalized.stitchCount,
         bounds: {
           minX: minX === Infinity ? 0 : minX,
           maxX: maxX === -Infinity ? 0 : maxX,

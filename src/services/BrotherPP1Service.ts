@@ -4,6 +4,7 @@ import type {
   SewingProgress,
 } from "../types/machine";
 import { MachineStatus } from "../types/machine";
+import { validatePenPlacement } from "../formats/pen/validate";
 
 // Custom error for pairing issues
 export class BluetoothPairingError extends Error {
@@ -652,6 +653,11 @@ export class BrotherPP1Service {
     bounds?: { minX: number; maxX: number; minY: number; maxY: number },
     patternOffset?: { x: number; y: number },
   ): Promise<Uint8Array> {
+    // Bounds supplied by a caller or restored cache may be stale. Derive the
+    // layout from final PEN bytes, and reject it before any machine mutation.
+    data = new Uint8Array(data);
+    const placement = validatePenPlacement(data, patternOffset);
+    bounds = placement.bounds;
     // Calculate checksum
     const checksum = data.reduce((sum, byte) => sum + byte, 0) & 0xffff;
 
